@@ -27,7 +27,10 @@ const ENABLE_THINKING_MODE = process.env.ENABLE_THINKING_MODE === 'true' || fals
 const MAX_FALLBACK_ATTEMPTS = parseInt(process.env.MAX_FALLBACK_ATTEMPTS, 10) || 4;
 
 // Upstream request timeout (ms). A hung model falls through to the next one.
-const UPSTREAM_TIMEOUT_MS = parseInt(process.env.UPSTREAM_TIMEOUT_MS, 10) || 120000;
+const UPSTREAM_TIMEOUT_MS = parseInt(process.env.UPSTREAM_TIMEOUT_MS, 10) || 60000;
+
+// If true, still try mapped models that are missing from NVIDIA's public model list (e.g. gated ones like Kimi K3)
+const ALLOW_UNLISTED_MODELS = process.env.ALLOW_UNLISTED_MODELS === 'true';
 
 // 🎯 MODEL MAPPING — updated October 2026
 //
@@ -41,10 +44,11 @@ const UPSTREAM_TIMEOUT_MS = parseInt(process.env.UPSTREAM_TIMEOUT_MS, 10) || 120
 // closest live replacement so existing Janitor AI configs don't break.
 const MODEL_MAPPING = {
   // --- DeepSeek ---
-  'deepseek-v4-pro':    'deepseek-ai/deepseek-v4-pro-0813',   // 1M ctx, flagship (old v4-pro is deprecated)
-  'deepseek-v4-pro-0813': 'deepseek-ai/deepseek-v4-pro-0813',
+  // NOTE: deepseek-v4-pro-0813 returned 410 (Gone) on the API and is not in the public list, so Pro aliases use V4.1 Flash
+  'deepseek-v4-pro':    'deepseek-ai/deepseek-v4.1-flash',
+  'deepseek-v4-pro-0813': 'deepseek-ai/deepseek-v4.1-flash',
   'deepseek-flash':     'deepseek-ai/deepseek-v4.1-flash',    // 552B MoE / 8B active, 1M ctx, multimodal
-  'gpt-4':              'deepseek-ai/deepseek-v4-pro-0813',
+  'gpt-4':              'z-ai/glm-5.3',
 
   // --- Moonshot Kimi ---
   'kimi-k3':            'moonshotai/kimi-k3',                 // ~2.8T MoE, 1M ctx (heavily rate limited on free tier)
@@ -90,7 +94,6 @@ const MODEL_MAPPING = {
 // Entries not present in the live /v1/models list are skipped automatically.
 const FALLBACK_CHAIN = [
   'z-ai/glm-5.3',
-  'deepseek-ai/deepseek-v4-pro-0813',
   'nvidia/nemotron-3-ultra-550b-a55b',
   'deepseek-ai/deepseek-v4.1-flash',
   'z-ai/glm-5.3-flash',
@@ -199,7 +202,12 @@ function applyThinkingMode(nimRequest) {
 // 🔄 Helper: make a NIM request with automatic fallback (429 / 5xx / 404 / 410 / timeout)
 async function makeNimRequest(nimRequest, stream) {
   const fallbacks = FALLBACK_CHAIN.filter(m => m !== nimRequest.model && isLive(m));
-  const modelsToTry = [nimRequest.model, ...fallbacks].slice(0, MAX_FALLBACK_ATTEMPTS);
+  let primary = [nimRequest.model];
+  if (!isLive(nimRequest.model) && !ALLOW_UNLISTED_MODELS) {
+    console.warn(`⏭️  ${nimRequest.model} is not in NVIDIA's live model list — skipping to fallbacks`);
+    primary = [];
+  }
+  const modelsToTry = [...primary, ...fallbacks].slice(0, MAX_FALLBACK_ATTEMPTS);
 
   for (let i = 0; i < modelsToTry.length; i++) {
     const modelAttempt = modelsToTry[i];
@@ -208,6 +216,9 @@ async function makeNimRequest(nimRequest, stream) {
     // chat_template_kwargs are model-specific — recompute for the fallback model
     delete attemptRequest.chat_template_kwargs;
     applyThinkingMode(attemptRequest);
+
+    const startedAt = Date.now();
+    console.log(`➡️  Trying ${modelAttempt} (attempt ${i + 1}/${modelsToTry.length})`);
 
     try {
       const response = await axios.post(`${NIM_API_BASE}/chat/completions`, attemptRequest, {
@@ -220,9 +231,7 @@ async function makeNimRequest(nimRequest, stream) {
       });
 
       response._usedModel = modelAttempt;
-      if (modelAttempt !== nimRequest.model) {
-        console.log(`✅ Fell back to: ${modelAttempt}`);
-      }
+      console.log(`✅ ${modelAttempt} responded in ${Date.now() - startedAt}ms`);
       return response;
 
     } catch (err) {
@@ -235,7 +244,7 @@ async function makeNimRequest(nimRequest, stream) {
 
       if (FALLBACK_STATUSES.has(status) || isTimeout) {
         const why = isTimeout ? 'timeout' : status;
-        console.warn(`⚠️  ${why} on ${modelAttempt} — ${isLast ? 'no more fallbacks' : `trying ${modelsToTry[i + 1]}`}`);
+        console.warn(`⚠️  ${why} on ${modelAttempt} after ${Date.now() - startedAt}ms — ${isLast ? 'no more fallbacks' : `trying ${modelsToTry[i + 1]}`}`);
         if (isLast) throw err;
         continue;
       }
@@ -255,7 +264,7 @@ function resolveModel(requested) {
 
   const modelLower = requested.toLowerCase();
   if (modelLower.includes('gpt-4') || modelLower.includes('opus') || modelLower.includes('405b')) {
-    return 'deepseek-ai/deepseek-v4-pro-0813';
+    return 'z-ai/glm-5.3';
   } else if (modelLower.includes('claude') || modelLower.includes('gemini') || modelLower.includes('70b')) {
     return 'z-ai/glm-5.3';
   }
@@ -291,7 +300,7 @@ app.get('/', (req, res) => {
       chat: '/v1/chat/completions'
     },
     featured_models: {
-      best_quality:   'gpt-4 → deepseek-v4-pro-0813 (1M ctx)',
+      best_quality:   'gpt-4 → z-ai/glm-5.3 (1M ctx)',
       best_roleplay:  'glm-5.3 / gpt-4o → z-ai/glm-5.3 (1M ctx)',
       newest_big:     'kimi-k3 → moonshotai/kimi-k3 (often rate limited)',
       most_popular:   'gpt-3.5-turbo → nemotron-3-ultra-550b',
@@ -547,8 +556,8 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`   • Max attempts:      ${MAX_FALLBACK_ATTEMPTS}`);
   console.log('');
   console.log('🎯 Main Aliases (October 2026):');
-  console.log('   • gpt-4            → DeepSeek V4 Pro 0813');
-  console.log('   • gpt-4o / glm-5.3 → GLM-5.3');
+  console.log('   • gpt-4            → GLM-5.3');
+  console.log('   • gpt-4o           → GLM-5.3');
   console.log('   • glm-flash        → GLM-5.3 Flash');
   console.log('   • deepseek-flash   → DeepSeek V4.1 Flash');
   console.log('   • kimi-k3          → Kimi K3 (often 429 on free tier)');
