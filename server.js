@@ -273,7 +273,7 @@ function resolveModel(requested) {
   } else if (modelLower.includes('claude') || modelLower.includes('gemini') || modelLower.includes('70b')) {
     return 'z-ai/glm-5.3';
   }
-  return 'z-ai/glm-5.3-flash'; // fast, reliable default
+  return 'nvidia/nemotron-3.5-super-vl-120b-a12b'; // fast, reliable default
 }
 
 // Health check endpoint
