@@ -494,6 +494,7 @@ app.post('/v1/chat/completions', async (req, res) => {
           total_tokens: 0
         }
       };
+      res.setHeader('X-Used-Model', response._usedModel);
       res.json(openaiResponse);
     }
 
