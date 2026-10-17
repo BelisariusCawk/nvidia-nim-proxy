@@ -259,7 +259,7 @@ async function makeNimRequest(nimRequest, stream) {
 
 // Resolve whatever model name Janitor AI sends into a real NIM model id
 function resolveModel(requested) {
-  if (!requested) return 'z-ai/glm-5.3';
+  if (!requested) return 'nvidia/nemotron-3.5-super-vl-120b-a12b';
   if (MODEL_MAPPING[requested]) return MODEL_MAPPING[requested];
 
   // Full NIM ids (e.g. "z-ai/glm-5.3") pass straight through — no probe request needed
@@ -267,11 +267,11 @@ function resolveModel(requested) {
 
   const modelLower = requested.toLowerCase();
   if (modelLower.includes('gpt-4') || modelLower.includes('opus') || modelLower.includes('405b')) {
-    return 'z-ai/glm-5.3';
+    return 'nvidia/nemotron-3.5-super-vl-120b-a12b';
   } else if (modelLower.includes('claude') || modelLower.includes('gemini') || modelLower.includes('70b')) {
-    return 'z-ai/glm-5.3';
+    return 'nvidia/nemotron-3.5-super-vl-120b-a12b';
   }
-  return 'nvidia/nemotron-3.5-super-vl-120b-a12b'; // fast, reliable default
+  return 'nvidia/nemotron-3.5-super-vl-120b-a12b';
 }
 
 // Health check endpoint
