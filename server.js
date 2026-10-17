@@ -93,11 +93,9 @@ const MODEL_MAPPING = {
 // 🔄 FALLBACK CHAIN — tried in order when the requested model is rate-limited / overloaded / gone.
 // Entries not present in the live /v1/models list are skipped automatically.
 const FALLBACK_CHAIN = [
-  'z-ai/glm-5.3',
-  'nvidia/nemotron-3-ultra-550b-a55b',
-  'deepseek-ai/deepseek-v4.1-flash',
   'z-ai/glm-5.3-flash',
   'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'google/gemma-4-31b-it',
 ];
 
 // HTTP statuses that trigger a fallback to the next model
