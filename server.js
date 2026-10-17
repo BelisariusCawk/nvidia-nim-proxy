@@ -28,6 +28,13 @@ const MAX_FALLBACK_ATTEMPTS = parseInt(process.env.MAX_FALLBACK_ATTEMPTS, 10) ||
 
 // Upstream request timeout (ms). A hung model falls through to the next one.
 const UPSTREAM_TIMEOUT_MS = parseInt(process.env.UPSTREAM_TIMEOUT_MS, 10) || 60000;
+// Models that are known to be slow get a longer wait before falling through to the next model
+const SLOW_MODELS = [
+  'nvidia/nemotron-3-ultra-550b-a55b',
+  'moonshotai/kimi-k3',
+  'deepseek-ai/deepseek-v4.1-flash',
+];
+const timeoutFor = (m) => SLOW_MODELS.includes(m) ? 120000 : UPSTREAM_TIMEOUT_MS;
 
 // If true, still try mapped models that are missing from NVIDIA's public model list (e.g. gated ones like Kimi K3)
 const ALLOW_UNLISTED_MODELS = process.env.ALLOW_UNLISTED_MODELS === 'true';
