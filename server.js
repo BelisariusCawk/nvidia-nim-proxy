@@ -232,7 +232,7 @@ async function makeNimRequest(nimRequest, stream) {
           'Content-Type': 'application/json'
         },
         responseType: stream ? 'stream' : 'json',
-        timeout: UPSTREAM_TIMEOUT_MS
+        timeout: timeoutFor(modelAttempt)
       });
 
       response._usedModel = modelAttempt;
